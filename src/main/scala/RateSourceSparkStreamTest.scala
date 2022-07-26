@@ -54,8 +54,6 @@ class ForeachWriterImpl(stats: PartitionStats) extends ForeachWriter[Row] {
 }
 
 object PartitionStats extends Enumeration {
-  type PartitionStats = Value
-
   final val partitionsOpened = Value("partitionsOpened")
   final val partitionsProcessed = Value("partitionsProcessed")
   final val partitionsClosed = Value("partitionsClosed")
