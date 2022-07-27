@@ -1,5 +1,5 @@
 import org.apache.spark.metrics.source.LongAccumulatorSource
-import org.apache.spark.sql.{ForeachWriter, Row, SparkSession}
+import org.apache.spark.sql.{ForeachWriter, SparkSession}
 import org.apache.spark.util.LongAccumulator
 import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
@@ -10,27 +10,25 @@ object RateSourceSparkStreamTest {
       .setAppName("RateSourceStreamTest")
 
     val spark = SparkSession
-      .builder
+      .builder()
       .config(conf)
-      .getOrCreate
-
-    val streamDF = spark
-      .readStream
-      .format("rate")
-      .option("rowsPerSecond", 1)
-      .load
-
-    streamDF.printSchema
+      .getOrCreate()
 
     val stats = new PartitionStats(spark.sparkContext)
-
     LongAccumulatorSource.register(spark.sparkContext, stats.statsMap)
 
-    streamDF
+    import spark.implicits._
+
+    spark
+      .readStream
+      .format("rate")
+      .option("numPartitions", 12)
+      .option("rowsPerSecond", 120)
+      .load()
+      .map(row => row.mkString("##"))
       .writeStream
       .foreach(new ForeachWriterImpl(stats))
-      .format("console")
-      .start
+      .start()
 
     spark.streams.awaitAnyTermination()
 
@@ -38,17 +36,22 @@ object RateSourceSparkStreamTest {
   }
 }
 
-class ForeachWriterImpl(stats: PartitionStats) extends ForeachWriter[Row] {
+class ForeachWriterImpl(stats: PartitionStats) extends ForeachWriter[String] {
+  private final val LOGGER = LoggerFactory.getLogger(this.getClass)
+
   override def open(partitionId: Long, epochId: Long): Boolean = {
+    LOGGER.info(s"Open partition $partitionId, epoch $epochId")
     stats.incMetric(PartitionStats.partitionsOpened, 1)
     true
   }
 
-  override def process(value: Row): Unit = {
+  override def process(value: String): Unit = {
+    LOGGER.info(s"Process value: $value")
     stats.incMetric(PartitionStats.partitionsProcessed, 1)
   }
 
   override def close(errorOrNull: Throwable): Unit = {
+    LOGGER.info(s"Close partition: $errorOrNull")
     stats.incMetric(PartitionStats.partitionsClosed, 1)
   }
 }
@@ -59,7 +62,7 @@ object PartitionStats extends Enumeration {
   final val partitionsClosed = Value("partitionsClosed")
 }
 
-class PartitionStats(sparkContext: SparkContext) {
+class PartitionStats(@transient sparkContext: SparkContext) extends Serializable {
   private final val LOGGER = LoggerFactory.getLogger(this.getClass)
 
   val statsMap: Map[String, LongAccumulator] =
