@@ -32,8 +32,8 @@ object RateSourceSparkStreamTest {
     spark
       .readStream
       .format("rate")
-      .option("numPartitions", 12)
-      .option("rowsPerSecond", 120)
+      .option("numPartitions", 120)
+      .option("rowsPerSecond", 12000)
       .load()
       .map(row => row.mkString("##"))
       .writeStream
@@ -82,8 +82,6 @@ object PartitionStats extends Enumeration {
 }
 
 class PartitionStats(sparkContext: SparkContext) extends MetricSet {
-  private final val LOGGER = LoggerFactory.getLogger(this.getClass)
-
   private final val statsMap: Map[PartitionStats.Value, LongAccumulator] =
     PartitionStats.values.unsorted.map(elem => elem -> sparkContext.longAccumulator(elem.toString)).toMap
 
@@ -97,10 +95,9 @@ class PartitionStats(sparkContext: SparkContext) extends MetricSet {
           new Gauge[Long]() {
             override def getValue: Long = {
               val metricValue = e._2.value
-              e._2.reset()
-              if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug(s"${e._1}: $metricValue")
-              }
+
+              e._2.reset() // this is possibly the problem!!!!
+
               metricValue
             }
           }
